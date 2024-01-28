@@ -1,3 +1,5 @@
+import type { Socket } from "socket.io-client"
+
 class Vector2 {
     constructor(public x: number, public y: number) {} 
 }
@@ -92,6 +94,12 @@ class Canvas extends Component {
 
 class PlayerProperties extends Component {
     constructor(public playerName: string) {
+        super()
+    }
+}
+
+class ServerConnection extends Component {
+    constructor(public socket: Socket<any, any>) {
         super()
     }
 }
@@ -328,17 +336,19 @@ class TileDragSystem extends System {
 
     onMouseUp(world: World, event: MouseEvent): void {
         const player = world.queryUnique(PlayerProperties)
+        const server = world.queryUnique(ServerConnection)
 
         for (const [eid, _, cPosition, cGrid] of world.queryE3(Dragged, Position, GridPosition)) {
             cGrid!.column = Math.floor((cPosition!.position.x + 32) / 64)
             cGrid!.line = Math.floor((cPosition!.position.y + 32) / 64)
             world.rescind(eid, Dragged.name)
             console.log(`${player.playerName} moving ${eid} to ${cGrid!.column}, ${cGrid!.line}`)
+            server.socket.emit('tileMoved', [eid, cGrid!.column, cGrid!.line])
         }
     }
 }
 
-function main() {
+export function main(socket: Socket) {
     const a = new AssetStore()
     const w = new World()
     const s = new SystemRegistry()
@@ -368,7 +378,8 @@ function main() {
 
     w.entity([
         Canvas.fromId("canvas"),
-        new PlayerProperties("player1")
+        new PlayerProperties("player1"),
+        new ServerConnection(socket)
     ])
 
     s.systems.push(new GridPositionSystem())
@@ -379,6 +390,13 @@ function main() {
     addEventListener("mousemove", (event) => s.onMouseMove(w, event))
     addEventListener("mouseup", (event) => s.onMouseUp(w, event))
     addEventListener("mousedown", (event) => s.onMouseDown(w, event))
+
+    socket.on('tileMoved', ([eid, col, line]) => {
+        console.log(`socket: moving ${eid} ${col} ${line}`)
+        let cGrid = w.locate(eid, GridPosition)
+        cGrid!.column = col
+        cGrid!.line = line
+    })
 
     function animate() {
         requestAnimationFrame(animate)
